@@ -9,8 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;450;500;550;600;650;700;750;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ asset('style.css') }}">
-    <link rel="stylesheet" href="{{ asset('pages.css') }}">
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body>
 <div class="utility">
@@ -88,6 +87,5 @@
     <div id="search-results" aria-live="polite"></div>
 </dialog>
 
-<script src="{{ asset('app.js') }}"></script>
 </body>
 </html>

@@ -1,1 +1,276 @@
-//
+window.IBMKinitMotion = function() {
+    if (window.IBMKmotionCleanup) window.IBMKmotionCleanup();
+    const controller = new AbortController(), signal = controller.signal;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let revealObserver = null, heroObserver = null, timer = null;
+    const revealTargets = [...document.querySelectorAll('.section-top,.section-heading,.program-layout,.about-photo,.about-text,.steps article,.resource-card,.route-timeline article,.support-list article,.specialty-card,.admission-road article,.checklist-layout>div,.identity-layout>div,.history-grid>div,.principles article,.official-grid>a,.contact-layout>div,.route-banner,.final-cta')];
+    if (!reduced.matches && 'IntersectionObserver' in window) {
+        revealObserver = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('is-visible');
+                    revealObserver.unobserve(entry.target);
+                }
+            });
+        }, { threshold: .08, rootMargin: '0px 0px -16px 0px' });
+        revealTargets.forEach((el, i) => {
+            el.classList.add('motion-reveal');
+            el.style.setProperty('--reveal-delay', `${(i % 3) * 55}ms`);
+            revealObserver.observe(el);
+        });
+    }
+    const hero = document.querySelector('.hero-carousel');
+    if (hero) {
+        const slides = [...hero.querySelectorAll('.hero-slide')], dots = [...hero.querySelectorAll('[data-slide]')], pause = hero.querySelector('[data-slide-action="pause"]'), counter = hero.querySelector('.slide-current'), announcement = hero.querySelector('#slide-announcement');
+        const duration = 7000;
+        let active = 0, userPaused = reduced.matches, hovered = false, focusPaused = false, heroVisible = true, deadline = 0, remaining = duration, pointer = null;
+        function sync() {
+            const stopped = userPaused || reduced.matches || hovered || focusPaused || !heroVisible || document.hidden;
+            hero.dataset.paused = String(stopped);
+            pause.setAttribute('aria-pressed', String(userPaused || reduced.matches));
+            pause.setAttribute('aria-label', userPaused || reduced.matches ? 'Включить автопрокрутку' : 'Остановить автопрокрутку');
+            pause.innerHTML = userPaused || reduced.matches ? '<svg aria-hidden="true" viewBox="0 0 20 20"><path d="m7 4 8 6-8 6Z"/></svg>' : '<svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7 5v10M13 5v10"/></svg>';
+            if (stopped) {
+                if (timer) {
+                    clearTimeout(timer);
+                    timer = null;
+                    remaining = Math.max(0, deadline - performance.now());
+                }
+            } else if (!timer) {
+                deadline = performance.now() + remaining;
+                timer = setTimeout(() => {
+                    timer = null;
+                    remaining = duration;
+                    show(active + 1, false);
+                }, remaining);
+            }
+        }
+        function show(index, manual) {
+            const next = (index + slides.length) % slides.length;
+            if (timer) {
+                clearTimeout(timer);
+                timer = null;
+            }
+            remaining = duration;
+            if (manual) userPaused = true;
+            if (next !== active) {
+                slides[active].classList.remove('is-active');
+                slides[active].setAttribute('aria-hidden', 'true');
+                slides[active].inert = true;
+                dots[active].classList.remove('is-current');
+                dots[active].removeAttribute('aria-current');
+                active = next;
+                slides[active].classList.add('is-active');
+                slides[active].setAttribute('aria-hidden', 'false');
+                slides[active].inert = false;
+                dots[active].classList.add('is-current');
+                dots[active].setAttribute('aria-current', 'true');
+                counter.textContent = String(active + 1).padStart(2, '0');
+                if (manual) announcement.textContent = `Слайд ${active + 1} из ${slides.length}: ${slides[active].querySelector('.hero-heading').textContent}`;
+            }
+            sync();
+        }
+        dots.forEach(dot => dot.addEventListener('click', () => show(Number(dot.dataset.slide), true), { signal }));
+        hero.querySelector('[data-slide-action="previous"]').addEventListener('click', () => show(active - 1, true), { signal });
+        hero.querySelector('[data-slide-action="next"]').addEventListener('click', () => show(active + 1, true), { signal });
+        pause.addEventListener('click', () => {
+            if (reduced.matches) {
+                userPaused = true;
+                announcement.textContent = 'Автопрокрутка отключена настройкой уменьшения движения.';
+            } else {
+                userPaused = !userPaused;
+                if (!userPaused) focusPaused = false;
+            }
+            sync();
+        }, { signal });
+        hero.addEventListener('mouseenter', () => { hovered = true; sync(); }, { signal });
+        hero.addEventListener('mouseleave', () => { hovered = false; sync(); }, { signal });
+        hero.addEventListener('focusin', () => { focusPaused = true; sync(); }, { signal });
+        hero.addEventListener('focusout', event => {
+            if (!hero.contains(event.relatedTarget)) {
+                focusPaused = false;
+                sync();
+            }
+        }, { signal });
+        hero.addEventListener('keydown', event => {
+            if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+                event.preventDefault();
+                show(active + (event.key === 'ArrowRight' ? 1 : -1), true);
+            }
+        }, { signal });
+        hero.addEventListener('pointerdown', event => {
+            if (event.pointerType === 'touch' || event.pointerType === 'pen') pointer = { x: event.clientX, y: event.clientY };
+        }, { signal });
+        hero.addEventListener('pointerup', event => {
+            if (!pointer) return;
+            const x = event.clientX - pointer.x, y = event.clientY - pointer.y;
+            pointer = null;
+            if (Math.abs(x) > 45 && Math.abs(x) > Math.abs(y) * 1.3) show(active + (x < 0 ? 1 : -1), true);
+        }, { signal });
+        hero.addEventListener('pointercancel', () => { pointer = null; }, { signal });
+        document.addEventListener('visibilitychange', sync, { signal });
+        reduced.addEventListener('change', () => {
+            if (reduced.matches) {
+                userPaused = true;
+                revealTargets.forEach(el => el.classList.add('is-visible'));
+                revealObserver?.disconnect();
+            }
+            sync();
+        }, { signal });
+        if ('IntersectionObserver' in window) {
+            heroObserver = new IntersectionObserver(entries => {
+                heroVisible = entries[0].isIntersecting;
+                sync();
+            }, { threshold: .15 });
+            heroObserver.observe(hero);
+        }
+        sync();
+    }
+    window.IBMKmotionCleanup = () => {
+        if (timer) clearTimeout(timer);
+        revealObserver?.disconnect();
+        heroObserver?.disconnect();
+        controller.abort();
+    };
+};
+
+window.IBMKinit = function() {
+    const programs = [
+        { title: 'Фельдшер', description: 'Оценивать состояние пациента, оказывать медицинскую помощь и принимать ответственные решения.', url: 'https://irkbmk.ru/node/613' },
+        { title: 'Медицинская сестра / медицинский брат', description: 'Помогать пациентам, выполнять сестринский уход и работать в команде медицинских специалистов.', url: 'https://irkbmk.ru/sveden/education' },
+        { title: 'Акушер / акушерка', description: 'Заботиться о здоровье женщины и ребёнка, помогать в один из самых важных моментов жизни.', url: 'https://irkbmk.ru/sveden/education' },
+        { title: 'Фармацевт', description: 'Разбираться в лекарственных препаратах, их хранении и отпуске, помогать людям получать квалифицированную фармацевтическую помощь.', url: 'https://irkbmk.ru/sveden/education' }
+    ];
+    document.querySelectorAll('[data-program]').forEach(button => button.addEventListener('click', () => {
+        const i = Number(button.dataset.program), program = programs[i];
+        document.querySelectorAll('[data-program]').forEach(el => {
+            const active = el === button;
+            el.classList.toggle('active', active);
+            el.setAttribute('aria-expanded', String(active));
+        });
+        document.querySelector('#preview-title').textContent = program.title;
+        document.querySelector('#preview-description').textContent = program.description;
+        document.querySelector('#preview-number').textContent = `0${i + 1} / 04`;
+        document.querySelector('#preview-link').href = program.url;
+    }));
+    const menu = document.querySelector('.menu-toggle'), nav = document.querySelector('.header nav');
+    if (menu && nav) {
+        menu.addEventListener('click', () => {
+            const open = nav.classList.toggle('open');
+            menu.setAttribute('aria-expanded', String(open));
+            menu.textContent = open ? '×' : '☰';
+        });
+        nav.querySelectorAll('a').forEach(a => a.addEventListener('click', () => {
+            nav.classList.remove('open');
+            menu.setAttribute('aria-expanded', 'false');
+            menu.textContent = '☰';
+        }));
+    }
+    const accessBtn = document.querySelector('#accessibility');
+    if (accessBtn) {
+        accessBtn.addEventListener('click', function() {
+            const active = document.body.classList.toggle('accessible');
+            this.setAttribute('aria-pressed', String(active));
+        });
+    }
+    const dialog = document.querySelector('#search-dialog'), input = document.querySelector('#site-search'), results = document.querySelector('#search-results'), searchOpen = document.querySelector('#search-open');
+    if (dialog && input && results && searchOpen) {
+        const pages = [
+            ['О колледже', '/about'],
+            ['Специальности и образование', '/applicant#choose'],
+            ['Лечебное дело', '/applicant#choose'],
+            ['Сестринское дело', '/applicant#choose'],
+            ['Акушерское дело', '/applicant#choose'],
+            ['Фармация', '/applicant#choose'],
+            ['Поступление и документы', '/applicant'],
+            ['Студентам', '/student'],
+            ['Расписание занятий', 'https://rasp.irkbmk.ru/cg.htm'],
+            ['Официальные сведения', 'https://irkbmk.ru/sveden/common']
+        ];
+        function search() {
+            const q = input.value.trim().toLowerCase(), found = pages.filter(([title]) => title.toLowerCase().includes(q));
+            results.replaceChildren();
+            if (!found.length) {
+                const p = document.createElement('p');
+                p.textContent = 'Ничего не найдено. Попробуйте «поступление» или «расписание».';
+                results.append(p);
+            }
+            found.forEach(([title, url]) => {
+                const a = document.createElement('a');
+                a.href = url;
+                a.textContent = title + ' ↗';
+                a.addEventListener('click', () => dialog.close());
+                results.append(a);
+            });
+        }
+        searchOpen.addEventListener('click', () => {
+            dialog.showModal();
+            search();
+            input.focus();
+        });
+        input.addEventListener('input', search);
+        dialog.addEventListener('click', event => {
+            if (event.target === dialog) {
+                const r = dialog.getBoundingClientRect();
+                if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) dialog.close();
+            }
+        });
+    }
+    const yearEl = document.querySelector('#year');
+    if (yearEl) yearEl.textContent = new Date().getFullYear();
+
+    const filters = [...document.querySelectorAll('[data-filter]')], serviceSearch = document.querySelector('#resource-search');
+    let currentFilter = 'all';
+    function filterResources() {
+        const query = (serviceSearch?.value || '').trim().toLocaleLowerCase('ru');
+        let count = 0;
+        document.querySelectorAll('.resource-card[data-category]').forEach(card => {
+            const visible = (currentFilter === 'all' || card.dataset.category === currentFilter) && card.textContent.toLocaleLowerCase('ru').includes(query);
+            card.hidden = !visible;
+            if (visible) count++;
+        });
+        const empty = document.querySelector('#resource-empty');
+        if (empty) empty.hidden = count !== 0;
+    }
+    filters.forEach(button => button.addEventListener('click', () => {
+        currentFilter = button.dataset.filter;
+        filters.forEach(el => {
+            el.classList.toggle('selected', el === button);
+            el.setAttribute('aria-pressed', String(el === button));
+        });
+        filterResources();
+    }));
+    serviceSearch?.addEventListener('input', filterResources);
+
+    const checks = [...document.querySelectorAll('[data-check]')], storageKey = 'ibmk-admission-checklist-v1';
+    let remembered = [];
+    try {
+        const data = JSON.parse(localStorage.getItem(storageKey) || '[]');
+        if (Array.isArray(data)) remembered = data;
+    } catch (error) {}
+    function updateChecklist(save) {
+        const values = checks.filter(check => check.checked).map(check => check.dataset.check), count = values.length;
+        const label = document.querySelector('#check-count'), fill = document.querySelector('#check-fill'), bar = document.querySelector('#check-progressbar');
+        if (label) label.textContent = count + ' из 5 шагов' + (count === 5 ? ' — ты готов(а) к следующему шагу!' : '');
+        if (fill) fill.style.width = (count / 5 * 100) + '%';
+        bar?.setAttribute('aria-valuenow', String(count));
+        if (save) {
+            try {
+                localStorage.setItem(storageKey, JSON.stringify(values));
+            } catch (error) {}
+        }
+    }
+    checks.forEach(check => {
+        check.checked = remembered.includes(check.dataset.check);
+        check.addEventListener('change', () => updateChecklist(true));
+    });
+    if (checks.length) updateChecklist(false);
+
+    window.IBMKinitMotion();
+};
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', window.IBMKinit);
+} else {
+    window.IBMKinit();
+}
